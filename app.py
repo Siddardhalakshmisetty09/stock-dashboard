@@ -771,7 +771,7 @@ for sector_name in get_sectors_list():
         avg_sector_change = sum(s["change_pct"] for s in sector_stocks) / len(sector_stocks)
         sector_market_cap = sum(s["market_cap"] for s in sector_stocks)
         sector_data.append({
-            "Sector": sector,
+            "Sector": sector_name,
             "Stocks": len(sector_stocks),
             "Avg Change %": f"{avg_sector_change:+.2f}%",
             "Total Market Cap": format_market_cap(sector_market_cap),
