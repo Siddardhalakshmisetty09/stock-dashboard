@@ -15,7 +15,7 @@ from news_sentiment import (
     analyze_sentiment,
     get_mention_counts
 )
-from alerts import get_alerts, get_volume_status
+from alerts import get_alerts, get_volume_status, get_market_status
 
 # Page config
 st.set_page_config(
@@ -265,7 +265,7 @@ with col1:
 with col2:
     st.markdown(
         f"<div style='text-align:right;padding-top:15px;'>"
-        f"<span class='refresh-badge'>🟢 Live • {datetime.now().strftime('%H:%M:%S')}</span>"
+        f"<span class='refresh-badge'>{"🟢" if mkt_status['status']=='open' else '🔴'} {mkt_status['label']}</span>"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -338,6 +338,7 @@ with st.spinner("📡 Fetching live market data & news..."):
     
     # Fetch alerts
     alerts_data = get_alerts(list(data.keys()))
+    mkt_status = get_market_status()
     total_alerts = sum(len(a) for a in alerts_data.values())
     time.sleep(0.3)
 
@@ -483,7 +484,7 @@ with col5:
 
 # ---- STOCK CARDS WITH NEWS (Grid Layout) ----
 # ---- ALERTS PANEL ----
-if show_news and 'alerts_data' in dir() and alerts_data:
+if show_news and 'alerts_data' in dir() and alerts_data and mkt_status['status'] == 'open':
     alert_count = sum(len(a) for a in alerts_data.values())
     if alert_count > 0:
         st.markdown("<div class='section-header'>🔔 Live Alerts</div>", unsafe_allow_html=True)
