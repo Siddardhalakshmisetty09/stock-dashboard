@@ -9,6 +9,11 @@ from data_fetcher import (
     format_market_cap, 
     format_volume
 )
+from news_sentiment import (
+    get_stock_news,
+    get_market_sentiment_summary,
+    analyze_sentiment
+)
 
 # Page config
 st.set_page_config(
@@ -41,7 +46,80 @@ st.markdown("""
         border-color: #3b82f6;
     }
     
-    /* Ticker symbol */
+    /* News card */
+    .news-card {
+        background: #141a26;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 8px 0;
+        border: 1px solid #1f2937;
+        border-left: 4px solid;
+        transition: background 0.2s;
+    }
+    .news-card:hover {
+        background: #1a2030;
+    }
+    .news-card.bullish { border-left-color: #22c55e; }
+    .news-card.bearish { border-left-color: #ef4444; }
+    .news-card.neutral { border-left-color: #eab308; }
+    
+    .news-title {
+        color: #e2e8f0;
+        font-size: 0.9em;
+        font-weight: 500;
+        line-height: 1.4;
+    }
+    .news-meta {
+        color: #6b7280;
+        font-size: 0.75em;
+        margin-top: 5px;
+    }
+    .news-source {
+        color: #60a5fa;
+    }
+    
+    /* Sentiment badge */
+    .sentiment-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 0.7em;
+        font-weight: 600;
+    }
+    .sentiment-badge.bullish {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .sentiment-badge.bearish {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .sentiment-badge.neutral {
+        background: rgba(234, 179, 8, 0.15);
+        color: #eab308;
+        border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    
+    /* Sentiment meter */
+    .sentiment-meter {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #141a26;
+        border-radius: 20px;
+        padding: 3px;
+        border: 1px solid #1f2937;
+    }
+    .sentiment-bar {
+        height: 8px;
+        border-radius: 4px;
+        transition: width 0.5s;
+    }
+    
     .ticker {
         color: #60a5fa;
         font-size: 1.4em;
@@ -49,14 +127,12 @@ st.markdown("""
         letter-spacing: 1px;
     }
     
-    /* Company name */
     .company-name {
         color: #9ca3af;
         font-size: 0.85em;
         margin-top: -5px;
     }
     
-    /* Price */
     .price {
         font-size: 1.8em;
         font-weight: 700;
@@ -65,7 +141,6 @@ st.markdown("""
     .price.up { color: #22c55e; }
     .price.down { color: #ef4444; }
     
-    /* Change */
     .change {
         font-size: 0.95em;
         font-weight: 500;
@@ -73,7 +148,6 @@ st.markdown("""
     .change.up { color: #22c55e; }
     .change.down { color: #ef4444; }
     
-    /* Section headers */
     .section-header {
         color: #f1f5f9;
         font-size: 1.6em;
@@ -83,14 +157,12 @@ st.markdown("""
         border-bottom: 2px solid #2a3040;
     }
     
-    /* Sub-header */
     .sub-header {
         color: #94a3b8;
         font-size: 0.95em;
         margin-bottom: 20px;
     }
     
-    /* Metric box */
     .metric-box {
         background: #141a26;
         border-radius: 8px;
@@ -110,7 +182,6 @@ st.markdown("""
         margin-top: 4px;
     }
     
-    /* Status badge */
     .sector-badge {
         display: inline-block;
         background: #1e293b;
@@ -122,7 +193,6 @@ st.markdown("""
         margin-top: 5px;
     }
     
-    /* Market summary cards */
     .summary-card {
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         border-radius: 16px;
@@ -141,12 +211,7 @@ st.markdown("""
         font-weight: 700;
         margin-top: 5px;
     }
-    .summary-change {
-        font-size: 0.9em;
-        margin-top: 3px;
-    }
     
-    /* Footer */
     .footer {
         color: #4b5563;
         text-align: center;
@@ -156,7 +221,6 @@ st.markdown("""
         border-top: 1px solid #1f2937;
     }
     
-    /* Auto-refresh */
     .refresh-badge {
         display: inline-flex;
         align-items: center;
@@ -169,13 +233,24 @@ st.markdown("""
         border: 1px solid #166534;
     }
     
-    /* Remove Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Headers */
     h1, h2, h3 {
         color: #f1f5f9 !important;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: #1a1f2e !important;
+        border-radius: 10px !important;
+        border: 1px solid #2a3040 !important;
+    }
+    .streamlit-expanderContent {
+        background: #141a26 !important;
+        border-radius: 0 0 10px 10px !important;
+        border: 1px solid #2a3040 !important;
+        border-top: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -214,6 +289,10 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
+    # News toggle
+    st.markdown("### 📰 News Settings")
+    show_news = st.checkbox("Show news & sentiment", value=True)
+    
     st.markdown("---")
     st.markdown("### 💡 About")
     st.markdown(
@@ -227,13 +306,34 @@ with st.sidebar:
         - 🔧 Equipment & Memory
         - 🌐 AI Infrastructure
         - 📊 AI Software & Platforms
+        
+        **Features:**
+        - 📈 Real-time stock data
+        - 📰 News & sentiment analysis
+        - 🏆 Gainers & Losers
+        - 📊 Sector performance
         """
     )
 
 # ---- Fetch Data ----
-with st.spinner("📡 Fetching live market data..."):
+with st.spinner("📡 Fetching live market data & news..."):
     data = get_stock_data()
-    time.sleep(0.5)  # Brief pause for UX
+    
+    # Fetch news for each stock if enabled
+    all_news = []
+    stock_news_cache = {}
+    if show_news:
+        progress_bar = st.progress(0)
+        tickers = list(data.keys())
+        for idx, ticker in enumerate(tickers):
+            news = get_stock_news(ticker, data[ticker]["name"])
+            stock_news_cache[ticker] = news
+            all_news.extend(news)
+            progress_bar.progress((idx + 1) / len(tickers))
+        progress_bar.empty()
+    
+    sentiment_summary = get_market_sentiment_summary(all_news)
+    time.sleep(0.3)
 
 # ---- Apply Filters ----
 filtered_tickers = list(data.keys())
@@ -254,6 +354,74 @@ elif perf_filter == "Top 5 Gainers":
 elif perf_filter == "Top 5 Losers":
     sorted_stocks = sorted(filtered_tickers, key=lambda t: data[t]["change_pct"])
     filtered_tickers = sorted_stocks[:5]
+
+# ---- NEWS & SENTIMENT OVERVIEW (Top Section) ----
+if show_news and all_news:
+    st.markdown("<div class='section-header'>📰 Market Sentiment & News</div>", unsafe_allow_html=True)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        sentiment_color = "#22c55e" if sentiment_summary["overall"] == "Bullish" else ("#ef4444" if sentiment_summary["overall"] == "Bearish" else "#eab308")
+        st.markdown(
+            f"<div class='summary-card'>"
+            f"<div class='summary-label'>Market Sentiment</div>"
+            f"<div class='summary-value' style='color:{sentiment_color}'>{sentiment_summary['emoji']} {sentiment_summary['overall']}</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    with col2:
+        st.markdown(
+            f"<div class='summary-card'>"
+            f"<div class='summary-label'>Bullish Articles</div>"
+            f"<div class='summary-value' style='color:#22c55e;'>{sentiment_summary['bullish_pct']:.0f}%</div>"
+            f"<div style='margin-top:5px;background:#1f2937;border-radius:10px;height:6px;'>"
+            f"<div style='width:{sentiment_summary['bullish_pct']}%;height:6px;background:#22c55e;border-radius:10px;'></div>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    with col3:
+        st.markdown(
+            f"<div class='summary-card'>"
+            f"<div class='summary-label'>Bearish Articles</div>"
+            f"<div class='summary-value' style='color:#ef4444;'>{sentiment_summary['bearish_pct']:.0f}%</div>"
+            f"<div style='margin-top:5px;background:#1f2937;border-radius:10px;height:6px;'>"
+            f"<div style='width:{sentiment_summary['bearish_pct']}%;height:6px;background:#ef4444;border-radius:10px;'></div>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    with col4:
+        st.markdown(
+            f"<div class='summary-card'>"
+            f"<div class='summary-label'>Total Articles</div>"
+            f"<div class='summary-value'>{sentiment_summary['total']}</div>"
+            f"<div class='summary-label' style='margin-top:5px;'>{len(all_news)} stocks covered</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    # Sentiment breakdown bar
+    bullish_pct = sentiment_summary["bullish_pct"]
+    bearish_pct = sentiment_summary["bearish_pct"]
+    neutral_pct = 100 - bullish_pct - bearish_pct
+    st.markdown(
+        f"<div style='margin-top:10px;background:#1f2937;border-radius:10px;height:10px;display:flex;overflow:hidden;'>"
+        f"<div style='width:{max(bullish_pct, 1)}%;height:10px;background:#22c55e;border-radius:10px 0 0 10px;'></div>"
+        f"<div style='width:{max(neutral_pct, 1)}%;height:10px;background:#eab308;'></div>"
+        f"<div style='width:{max(bearish_pct, 1)}%;height:10px;background:#ef4444;border-radius:0 10px 10px 0;'></div>"
+        f"</div>"
+        f"<div style='display:flex;justify-content:space-between;color:#6b7280;font-size:0.75em;margin-top:3px;'>"
+        f"<span>🟢 Bullish {bullish_pct:.0f}%</span>"
+        f"<span>🟡 Neutral {neutral_pct:.0f}%</span>"
+        f"<span>🔴 Bearish {bearish_pct:.0f}%</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
 # ---- MARKET OVERVIEW ----
 st.markdown("<div class='section-header'>📈 Market Overview</div>", unsafe_allow_html=True)
@@ -307,7 +475,7 @@ with col5:
         unsafe_allow_html=True
     )
 
-# ---- STOCK CARDS (Grid Layout) ----
+# ---- STOCK CARDS WITH NEWS (Grid Layout) ----
 st.markdown("<div class='section-header'>🏢 Stock Details</div>", unsafe_allow_html=True)
 st.markdown(f"<div class='sub-header'>Showing {len(filtered_tickers)} of {len(data)} stocks</div>", unsafe_allow_html=True)
 
@@ -319,6 +487,9 @@ for i in range(0, len(filtered_tickers), 3):
         with cols[j]:
             direction_class = stock["direction"]
             arrow = "▲" if stock["direction"] == "up" else "▼"
+            
+            # News for this stock
+            stock_news = stock_news_cache.get(ticker, [])
             
             st.markdown(
                 f"""
@@ -348,10 +519,28 @@ for i in range(0, len(filtered_tickers), 3):
                             <div class='metric-value'>{f"{stock['pe_ratio']:.1f}" if stock['pe_ratio'] else 'N/A'}</div>
                         </div>
                     </div>
+                    {"".join(getattr(st, 'empty', lambda: None)() for _ in range(0))}
                 </div>
                 """,
                 unsafe_allow_html=True
             )
+            
+            # News expander for this stock
+            if show_news and stock_news:
+                with st.expander(f"📰 News & Sentiment ({len(stock_news)} articles)"):
+                    for article in stock_news:
+                        sentiment_class = article["sentiment_label"].lower()
+                        st.markdown(
+                            f"<div class='news-card {sentiment_class}'>"
+                            f"<div class='news-title'>{article['title']}</div>"
+                            f"<div class='news-meta'>"
+                            f"<span class='news-source'>{article['source']}</span> • "
+                            f"{article['published']} • "
+                            f"<span class='sentiment-badge {sentiment_class}'>{article['sentiment_emoji']} {article['sentiment_label']}</span>"
+                            f"</div>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
 
 # ---- SECTOR BREAKDOWN ----
 st.markdown("<div class='section-header'>📊 Sector Performance</div>", unsafe_allow_html=True)
@@ -416,8 +605,29 @@ with col2:
             unsafe_allow_html=True
         )
 
+# ---- LATEST SENTIMENT NEWS FEED ----
+if show_news and all_news:
+    st.markdown("<div class='section-header'>📰 Latest Market News</div>", unsafe_allow_html=True)
+    
+    # Show top 10 most recent/relevant news across all stocks
+    top_news = sorted(all_news, key=lambda x: x.get("published", ""), reverse=True)[:10]
+    
+    for article in top_news:
+        sentiment_class = article["sentiment_label"].lower()
+        st.markdown(
+            f"<div class='news-card {sentiment_class}'>"
+            f"<div class='news-title'>{article['title']}</div>"
+            f"<div class='news-meta'>"
+            f"<span class='news-source'>{article['source']}</span> • "
+            f"{article['published']} • "
+            f"<span class='sentiment-badge {sentiment_class}'>{article['sentiment_emoji']} {article['sentiment_label']}</span>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
 # ---- Footer ----
-st.markdown("<div class='footer'>🤖 AI Backbone Stock Dashboard • Data powered by Yahoo Finance • Updated in real-time</div>", unsafe_allow_html=True)
+st.markdown("<div class='footer'>🤖 AI Backbone Stock Dashboard • Data: Yahoo Finance • News: NewsAPI/Google News • Sentiment: TextBlob</div>", unsafe_allow_html=True)
 
 # ---- Auto-Refresh Logic ----
 if auto_refresh:
