@@ -15,6 +15,7 @@ from news_sentiment import (
     analyze_sentiment,
     get_mention_counts
 )
+from alerts import get_alerts, get_volume_status
 
 # Page config
 st.set_page_config(
@@ -334,6 +335,10 @@ with st.spinner("📡 Fetching live market data & news..."):
         progress_bar.empty()
     
     sentiment_summary = get_market_sentiment_summary(all_news)
+    
+    # Fetch alerts
+    alerts_data = get_alerts(list(data.keys()))
+    total_alerts = sum(len(a) for a in alerts_data.values())
     time.sleep(0.3)
 
 # ---- Apply Filters ----
@@ -477,7 +482,35 @@ with col5:
     )
 
 # ---- STOCK CARDS WITH NEWS (Grid Layout) ----
-st.markdown("<div class='section-header'>🏢 Stock Details</div>", unsafe_allow_html=True)
+# ---- ALERTS PANEL ----
+if show_news and 'alerts_data' in dir() and alerts_data:
+    alert_count = sum(len(a) for a in alerts_data.values())
+    if alert_count > 0:
+        st.markdown("<div class='section-header'>🔔 Live Alerts</div>", unsafe_allow_html=True)
+        
+        # Count by severity
+        high = sum(1 for alerts in alerts_data.values() for a in alerts if a['severity'] == 'high')
+        medium = sum(1 for alerts in alerts_data.values() for a in alerts if a['severity'] == 'medium')
+        
+        st.markdown(f"<div style='color:#94a3b8;margin-bottom:15px;'>{alert_count} alerts • {'🔴' if high else ''} {high} high • {'🟡' if medium else ''} {medium} medium</div>", unsafe_allow_html=True)
+        
+        # Show alerts in expandable sections by ticker
+        for ticker, alerts in sorted(alerts_data.items()):
+            if not alerts:
+                continue
+            name = data.get(ticker, {}).get('name', ticker)
+            with st.expander(f"🚨 {ticker} - {name} ({len(alerts)} alerts)"):
+                for alert in alerts:
+                    severity_color = "#ef4444" if alert['severity'] == 'high' else "#eab308" if alert['severity'] == 'medium' else "#6b7280"
+                    st.markdown(
+                        f"<div style='background:#141a26;padding:12px 15px;border-radius:8px;margin:5px 0;border-left:4px solid {severity_color};'>"
+                        f"<div style='color:#e2e8f0;font-weight:500;'>{alert['message']}</div>"
+                        f"<div style='color:#6b7280;font-size:0.8em;margin-top:3px;'>{alert['detail']} • {alert['time']}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+
+st.markdown("<div class='section-header'>🏢 Stock Details</div>" , unsafe_allow_html=True)
 st.markdown(f"<div class='sub-header'>Showing {len(filtered_tickers)} of {len(data)} stocks</div>", unsafe_allow_html=True)
 
 # Display in rows of 3
@@ -533,7 +566,7 @@ for i in range(0, len(filtered_tickers), 3):
                         sentiment_class = article["sentiment_label"].lower()
                         st.markdown(
                             f"<div class='news-card {sentiment_class}'>"
-                            f"<div class='news-title'>{article['title']}</div>"
+                            f"<div class='news-title'><a href=\"{article['url']}\" target=\"_blank\" style='color:#e2e8f0;text-decoration:none;' onmouseover=\"this.style.color='#60a5fa'\" onmouseout=\"this.style.color='#e2e8f0'\">{article['title']}</a></div>"
                             f"<div class='news-meta'>"
                             f"<span class='news-source'>{article['source']}</span> • "
                             f"{article['published']} • "
@@ -617,7 +650,7 @@ if show_news and all_news:
         sentiment_class = article["sentiment_label"].lower()
         st.markdown(
             f"<div class='news-card {sentiment_class}'>"
-            f"<div class='news-title'>{article['title']}</div>"
+            f"<div class='news-title'><a href=\"{article['url']}\" target=\"_blank\" style='color:#e2e8f0;text-decoration:none;' onmouseover=\"this.style.color='#60a5fa'\" onmouseout=\"this.style.color='#e2e8f0'\">{article['title']}</a></div>"
             f"<div class='news-meta'>"
             f"<span class='news-source'>{article['source']}</span> • "
             f"{article['published']} • "
