@@ -3,49 +3,171 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import time
+import requests
+import json
 
 # Cache for historical data
 _hist_cache = {}
 _cache_time = {}
 
 # ============================================================
+# TRADINGVIEW DATA FETCHER (More accurate than yfinance)
+# ============================================================
+
+TV_INTERVALS = {
+    "1m": "1",
+    "5m": "5",
+    "15m": "15",
+    "1h": "60",
+    "4h": "240",
+    "1d": "1D",
+}
+
+def fetch_tradingview_data(ticker, interval="5m", count=100):
+    """
+    Fetch OHLCV data from TradingView's unofficial REST API.
+    More accurate and faster than yfinance for intraday data.
+    """
+    cache_key = f"tv_{ticker}_{interval}"
+    
+    # Cache for 20 seconds
+    if cache_key in _cache_time:
+        if (datetime.now() - _cache_time[cache_key]).seconds < 20:
+            return _hist_cache.get(cache_key)
+    
+    try:
+        # Map ticker to TradingView format
+        tv_symbol = _to_tv_symbol(ticker)
+        tv_interval = TV_INTERVALS.get(interval, "5")
+        
+        # TradingView chart data endpoint
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Origin": "https://www.tradingview.com",
+            "Referer": "https://www.tradingview.com/",
+        }
+        
+        url = f"https://chartdata.tradingview.com/symbols/{tv_symbol}/bars?resolution={tv_interval}&from={int((datetime.now() - timedelta(days=3)).timestamp())}&to={int(datetime.now().timestamp())}&countback={count}"
+        
+        response = requests.get(url, headers=headers, timeout=5)
+        
+        if response.status_code != 200:
+            return _fallback_to_yfinance(ticker, interval)
+        
+        data = response.json()
+        
+        if not data or "bars" not in data:
+            return _fallback_to_yfinance(ticker, interval)
+        
+        # Parse into DataFrame
+        bars = data["bars"]
+        records = []
+        for bar in bars:
+            records.append({
+                "Open": float(bar["open"]),
+                "High": float(bar["high"]),
+                "Low": float(bar["low"]),
+                "Close": float(bar["close"]),
+                "Volume": float(bar["volume"]),
+                "Datetime": pd.to_datetime(bar["time"], unit="s"),
+            })
+        
+        df = pd.DataFrame(records)
+        df.set_index("Datetime", inplace=True)
+        df.sort_index(inplace=True)
+        
+        _hist_cache[cache_key] = df
+        _cache_time[cache_key] = datetime.now()
+        return df
+        
+    except Exception:
+        return _fallback_to_yfinance(ticker, interval)
+
+def _to_tv_symbol(ticker):
+    """Map stock ticker to TradingView symbol format"""
+    exchange_map = {
+        "TSM": "NYSE:TSM",
+        "SMCI": "NASDAQ:SMCI",
+        "ARM": "NASDAQ:ARM",
+    }
+    if ticker in exchange_map:
+        return exchange_map[ticker]
+    return ticker
+
+def _fallback_to_yfinance(ticker, interval="5m"):
+    """Fallback to yfinance when TradingView fails"""
+    cache_key = f"yf_{ticker}_{interval}"
+    
+    if cache_key in _cache_time:
+        if (datetime.now() - _cache_time[cache_key]).seconds < 60:
+            return _hist_cache.get(cache_key)
+    
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="2d", interval=interval)
+        if hist is not None and not hist.empty:
+            _hist_cache[cache_key] = hist
+            _cache_time[cache_key] = datetime.now()
+            return hist
+    except:
+        pass
+    return None
+
+def get_tradingview_volume_analysis(ticker):
+    """Get volume analysis directly from TradingView"""
+    try:
+        df = fetch_tradingview_data(ticker, interval="5m", count=50)
+        if df is None or len(df) < 10:
+            return None
+        
+        recent_5 = df["Volume"].iloc[-5:].mean()
+        avg_5 = df["Volume"].iloc[:-5].mean()
+        
+        if avg_5 <= 0:
+            return None
+        
+        ratio = recent_5 / avg_5
+        
+        last_candle = df.iloc[-1]
+        prev_candle = df.iloc[-2]
+        price_change = ((last_candle["Close"] - prev_candle["Close"]) / prev_candle["Close"]) * 100
+        
+        return {
+            "ticker": ticker,
+            "source": "TradingView",
+            "recent_avg_volume": int(recent_5),
+            "overall_avg_volume": int(avg_5),
+            "volume_ratio": round(ratio, 1),
+            "price_change_5m": round(price_change, 2),
+            "last_price": round(last_candle["Close"], 2),
+            "last_volume": int(last_candle["Volume"]),
+            "total_volume_today": int(df["Volume"].sum()),
+        }
+    except:
+        return None
+
+
+# ============================================================
 # MARKET HOURS CHECK (US Stock Market)
 # ============================================================
-# Regular hours: Mon-Fri, 9:30 AM - 4:00 PM ET
-# Pre-market: 4:00 AM - 9:30 AM
-# After-hours: 4:00 PM - 8:00 PM
 
 def is_market_open():
     """Check if US stock market is currently in session"""
     now = datetime.now()
     
-    # Weekend check
-    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+    if now.weekday() >= 5:
         return False, "Weekend"
     
-    # Market hours ET (estimate using UTC-4 or UTC-5)
-    # Simple approach: use UTC time for approximation
     utc_hour = now.hour
     utc_minute = now.minute
     
-    # ET is UTC-4 (EDT) or UTC-5 (EST)
-    # Rough: if UTC hour is 13:30 to 20:00, market is open (9:30 AM - 4:00 PM ET)
-    # 9:30 AM ET = 13:30 UTC (EDT) or 14:30 UTC (EST)
-    # 4:00 PM ET = 20:00 UTC (EDT) or 21:00 UTC (EST)
-    
-    # Use US Eastern Time via a simpler method: check yfinance data freshness
-    # Instead of complex DST calculations, we'll check if the last bar is recent
-    
-    # For simplicity, market considered "active" during US trading hours
-    # 9:30 AM - 4:00 PM ET on weekdays
     market_open_hour = 13  # UTC approx (9:30 AM ET)
     market_close_hour = 20  # UTC approx (4:00 PM ET)
     
-    # Check if we're in regular hours (approximate)
     is_open = False
     session = "Closed"
     
-    if now.weekday() < 5:  # Weekday
+    if now.weekday() < 5:
         if utc_hour >= market_open_hour and utc_hour < market_close_hour:
             is_open = True
             session = "Regular Hours"
@@ -61,48 +183,50 @@ def is_market_open():
 def get_alerts(tickers, threshold_volume=2.0, threshold_price=2.0):
     """
     Detect alerts for all stocks.
-    Only generates TRUE alerts when market is open.
-    Returns dict of ticker -> list of alerts
+    Uses TradingView data FIRST, falls back to yfinance.
+    Only generates alerts when market is open.
     """
     market_open, session = is_market_open()
     alerts = {}
     
     if not market_open:
-        # Return empty alerts with session info
-        return alerts  # No alerts when market is closed
+        return alerts
     
     for ticker in tickers:
         ticker_alerts = []
         
         try:
-            # Fetch 5-minute intraday data
-            intraday = _get_intraday_data(ticker)
+            # Try TradingView first for 5m data
+            intraday = fetch_tradingview_data(ticker, interval="5m", count=80)
+            
+            # Fallback to yfinance if TradingView fails
+            if intraday is None:
+                intraday = _get_intraday_data_yf(ticker)
             
             if intraday is not None and not intraday.empty:
-                # --- CHECK 1: Volume Spike ---
+                # Volume Spike
                 vol_alert = _check_volume_spike(intraday, threshold_volume)
                 if vol_alert:
                     ticker_alerts.append(vol_alert)
                 
-                # --- CHECK 2: Sudden Price Move ---
+                # Sudden Price Move
                 price_alert = _check_price_spike(intraday, threshold_price)
                 if price_alert:
                     ticker_alerts.append(price_alert)
                 
-                # --- CHECK 3: Unusual Volume Bar ---
+                # Unusual Bar
                 bar_alert = _check_unusual_bar(intraday, ticker)
                 if bar_alert:
                     ticker_alerts.append(bar_alert)
             
-            # --- CHECK 4: Daily Volume vs Average ---
+            # Daily Volume vs Average
             daily_alert = _check_daily_volume(ticker, threshold_volume)
             if daily_alert:
                 ticker_alerts.append(daily_alert)
                 
         except Exception:
-            pass  # Skip if data unavailable
+            pass
         
-        # Sort alerts by severity
         severity_order = {"high": 0, "medium": 1, "low": 2}
         ticker_alerts.sort(key=lambda x: severity_order.get(x["severity"], 3))
         
@@ -118,23 +242,22 @@ def get_market_status():
     if market_open:
         return {
             "status": "open",
-            "label": "🟢 Market Open",
+            "label": "Market Open",
             "session": session,
             "color": "#22c55e"
         }
     else:
         return {
             "status": "closed",
-            "label": "🔴 Market Closed",
+            "label": "Market Closed",
             "session": session,
             "color": "#ef4444"
         }
 
-def _get_intraday_data(ticker, interval="5m", period="2d"):
-    """Fetch intraday data for alert detection"""
-    cache_key = f"{ticker}_{interval}"
+def _get_intraday_data_yf(ticker, interval="5m", period="2d"):
+    """Fetch intraday data via yfinance"""
+    cache_key = f"yf_{ticker}_{interval}"
     
-    # Use cache (30 second TTL for 5m data)
     if cache_key in _cache_time:
         if (datetime.now() - _cache_time[cache_key]).seconds < 30:
             return _hist_cache.get(cache_key)
@@ -142,14 +265,12 @@ def _get_intraday_data(ticker, interval="5m", period="2d"):
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period=period, interval=interval)
-        
         if hist is not None and not hist.empty:
             _hist_cache[cache_key] = hist
             _cache_time[cache_key] = datetime.now()
             return hist
     except:
         pass
-    
     return None
 
 def _check_volume_spike(intraday, threshold=2.0):
@@ -157,30 +278,27 @@ def _check_volume_spike(intraday, threshold=2.0):
     if len(intraday) < 5:
         return None
     
-    # Only consider data from today if it's the most recent day
-    # Filter to only include recent trading day data
+    # Only today's data
     today = datetime.now().strftime("%Y-%m-%d")
     recent_data = intraday[intraday.index >= today] if today in intraday.index.strftime("%Y-%m-%d").values else intraday
     
     if len(recent_data) < 3:
         return None
     
-    # Last 3 bars vs average of today's bars
     recent_volume = recent_data["Volume"].iloc[-3:].mean()
     avg_volume = recent_data["Volume"].iloc[:-3].mean()
     
-    # If avg_volume is too small (thin data), skip alert
-    if avg_volume <= 0 or recent_volume < 1000:  # Skip if volume is negligible
+    if avg_volume <= 0 or recent_volume < 1000:
         return None
     
     ratio = recent_volume / avg_volume if avg_volume > 0 else 0
     
-    if ratio >= threshold and recent_volume > 10000:  # Minimum meaningful volume
+    if ratio >= threshold and recent_volume > 10000:
         severity = "high" if ratio >= 3.0 else "medium"
         return {
             "type": "volume_spike",
             "message": f"🚨 Volume spike! {ratio:.1f}x average ({int(recent_volume):,} vs {int(avg_volume):,})",
-            "detail": f"Comparing intraday bars only",
+            "detail": f"Intraday bars (TradingView)",
             "severity": severity,
             "time": datetime.now().strftime("%H:%M"),
         }
@@ -192,14 +310,12 @@ def _check_price_spike(intraday, threshold=2.0):
     if len(intraday) < 3:
         return None
     
-    # Only consider today's data
     today = datetime.now().strftime("%Y-%m-%d")
     recent_data = intraday[intraday.index >= today] if today in intraday.index.strftime("%Y-%m-%d").values else intraday
     
     if len(recent_data) < 3:
         return None
     
-    # Last 5-minute candle change
     recent = recent_data.iloc[-1]
     prev = recent_data.iloc[-2]
     
@@ -207,11 +323,8 @@ def _check_price_spike(intraday, threshold=2.0):
         return None
     
     candle_change = ((recent["Close"] - prev["Close"]) / prev["Close"]) * 100
-    
-    # Also check high-low range of recent bar
     bar_range = ((recent["High"] - recent["Low"]) / recent["Close"]) * 100 if recent["Close"] else 0
     
-    # Only alert if price moved meaningfully AND volume is decent (real trades)
     if abs(candle_change) >= threshold or bar_range >= threshold * 1.5:
         direction = "surged" if candle_change > 0 else "dropped"
         emoji = "🚀" if candle_change > 0 else "📉"
@@ -228,23 +341,20 @@ def _check_price_spike(intraday, threshold=2.0):
     return None
 
 def _check_unusual_bar(intraday, ticker):
-    """Check for unusually large candles (big volume + big range)"""
+    """Check for unusually large candles"""
     if len(intraday) < 5:
         return None
     
-    # Only consider today's data
     today = datetime.now().strftime("%Y-%m-%d")
     recent_data = intraday[intraday.index >= today] if today in intraday.index.strftime("%Y-%m-%d").values else intraday
     
     if len(recent_data) < 3:
         return None
     
-    # Recent bar stats
     recent = recent_data.iloc[-1]
     recent_vol = recent["Volume"]
     recent_range = ((recent["High"] - recent["Low"]) / recent["Open"]) * 100 if recent["Open"] else 0
     
-    # Historical averages (today only)
     avg_vol = recent_data["Volume"].iloc[:-1].mean()
     avg_range = ((recent_data["High"].iloc[:-1] - recent_data["Low"].iloc[:-1]) / recent_data["Open"].iloc[:-1]).mean() * 100 if any(recent_data["Open"].iloc[:-1] > 0) else 0
     
@@ -254,10 +364,8 @@ def _check_unusual_bar(intraday, ticker):
     vol_ratio = recent_vol / avg_vol
     range_ratio = recent_range / avg_range if avg_range > 0 else 1
     
-    # Unusual when both volume and range are elevated with meaningful activity
     if vol_ratio >= 1.5 and range_ratio >= 1.5 and recent_vol > 10000:
         severity = "high" if (vol_ratio >= 3 and range_ratio >= 2) else "medium"
-        
         return {
             "type": "unusual_bar",
             "message": f"⚡ Unusual bar detected! Vol: {vol_ratio:.1f}x, Range: {range_ratio:.1f}x average",
@@ -269,7 +377,7 @@ def _check_unusual_bar(intraday, ticker):
     return None
 
 def _check_daily_volume(ticker, threshold=2.0):
-    """Check today's volume vs 10-day average (only if today has meaningful data)"""
+    """Check today's volume vs 10-day average"""
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="2mo")
@@ -277,17 +385,14 @@ def _check_daily_volume(ticker, threshold=2.0):
         if hist is None or len(hist) < 10:
             return None
         
-        # Check if today's data exists and has meaningful volume
         today = datetime.now().strftime("%Y-%m-%d")
         today_data = hist[hist.index.strftime("%Y-%m-%d") == today]
         
-        # If no today data or very low volume, skip
         if today_data.empty or today_data["Volume"].iloc[-1] < 100000:
             return None
         
         today_volume = today_data["Volume"].iloc[-1]
         
-        # Average of previous 10 trading days
         prev_days = hist[hist.index < today]
         if len(prev_days) >= 10:
             avg_volume = prev_days["Volume"].iloc[-10:].mean()
@@ -310,23 +415,21 @@ def _check_daily_volume(ticker, threshold=2.0):
             }
     except:
         pass
-    
     return None
 
 def get_volume_status(ticker, intraday=None):
-    """Get quick volume status indicator - returns normal if market closed"""
+    """Get quick volume status indicator"""
     market_open, _ = is_market_open()
     
     if not market_open:
         return {"level": "normal", "ratio": 1.0, "label": "Market Closed"}
     
     if intraday is None:
-        intraday = _get_intraday_data(ticker)
+        intraday = fetch_tradingview_data(ticker, interval="5m", count=50)
     
     if intraday is None or len(intraday) < 5:
         return {"level": "normal", "ratio": 1.0, "label": "Normal"}
     
-    # Only today's data
     today = datetime.now().strftime("%Y-%m-%d")
     recent_data = intraday[intraday.index >= today] if today in intraday.index.strftime("%Y-%m-%d").values else intraday
     
