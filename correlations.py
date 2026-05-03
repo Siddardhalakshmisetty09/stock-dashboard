@@ -128,6 +128,22 @@ STOCK_DESCRIPTIONS = {
     "LRCX": "Semiconductor etching equipment leader",
     "KLAC": "Semiconductor inspection & measurement equipment leader",
     "FCX": "World's largest public copper producer - Freeport-McMoRan",
+    "ORCL": "Enterprise database & cloud giant - Oracle Cloud Infrastructure growing 30%+ annually, AI workloads driving demand",
+    "IBM": "Tech & consulting giant - hybrid cloud platform + Watsonx AI solutions for enterprise",
+    "CRM": "CRM & enterprise software leader - Salesforce Einstein AI agents driving next-gen automation",
+    "ADBE": "Creative & document software leader - Firefly AI integrated across Photoshop, Premiere, Acrobat",
+    "NOW": "Enterprise workflow automation - Now AI platform automating IT, HR, and business processes",
+    "SAP": "German enterprise software giant - SAP S/4HANA powers 87% of global commerce transactions",
+    "UBER": "Ride-sharing & food delivery platform - Uber Eats, Freight, autonomous driving partnerships",
+    "SHOP": "E-commerce platform for merchants - Shopify Payments, Shop Pay, and AI commerce tools",
+    "SNOW": "Cloud data platform leader - Snowflake Data Cloud enables AI/ML workloads at scale",
+    "DDOG": "Cloud monitoring & observability - Datadog tracks entire tech infrastructure stacks",
+    "MDB": "Modern document database - MongoDB Atlas is the leading developer data platform",
+    "NET": "Cloud security & CDN provider - Cloudflare protects 20%+ of the global web",
+    "COIN": "Crypto exchange & infrastructure leader - Coinbase powers institutional and retail crypto trading",
+    "MSTR": "Business intelligence software + Bitcoin treasury - MicroStrategy holds 200K+ BTC",
+    "HOOD": "Commission-free trading app - Robinhood democratizing retail investing with crypto + stocks",
+
     "SCCO": "Low-cost copper producer with operations in Peru & Mexico",
     "HBM": "Copper & gold miner with growing production in Americas",
     "TECK": "Diversified miner - copper, steelmaking coal, zinc",
@@ -215,10 +231,11 @@ def search_stocks(query, data=None):
     for ticker, name in STOCK_DESCRIPTIONS.items():
         if query in ticker.upper() or query in name.upper():
             summary = get_stock_summary(ticker, data)
+            story = get_stock_story(ticker, data) if data else summary["description"]
             results.append({
                 "ticker": ticker,
                 "name": name,
-                "description": summary["description"],
+                "description": story,
                 "price": summary["price"],
                 "change_pct": summary["change_pct"],
                 "volume_str": summary["volume_str"],
@@ -231,10 +248,11 @@ def search_stocks(query, data=None):
             if ticker not in searched_tickers:
                 name = data[ticker].get("name", ticker)
                 if query in ticker.upper() or query in name.upper():
+                    story = get_stock_story(ticker, data)
                     results.append({
                         "ticker": ticker,
                         "name": name,
-                        "description": f"Price: ${data[ticker].get('price', 0):.2f} | Change: {data[ticker].get('change_pct', 0):+.2f}%",
+                        "description": story,
                         "price": data[ticker].get("price", 0),
                         "change_pct": data[ticker].get("change_pct", 0),
                         "volume_str": "N/A",
@@ -435,6 +453,137 @@ def _get_sector_drivers(sector_name, avg_change):
         ]
     
     return drivers[:3]  # Max 3 drivers
+
+
+
+# ============================================================
+# EARNINGS & CATALYST DATA
+# ============================================================
+
+def get_earnings_info(ticker):
+    """Fetch latest earnings date, EPS, and guidance for a stock"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Get earnings data
+        earnings_date = info.get("earningsDate")
+        earnings_avg = info.get("earningsAverage")
+        earnings_low = info.get("earningsLow")
+        earnings_high = info.get("earningsHigh")
+        
+        # Format earnings date
+        if earnings_date:
+            if isinstance(earnings_date, (list, tuple)):
+                earnings_date = earnings_date[0] if earnings_date else None
+            if isinstance(earnings_date, (int, float)):
+                from datetime import datetime
+                earnings_date = datetime.fromtimestamp(earnings_date).strftime("%b %d, %Y")
+            elif hasattr(earnings_date, 'strftime'):
+                earnings_date = earnings_date.strftime("%b %d, %Y")
+            else:
+                earnings_date = str(earnings_date)[:12]
+        
+        # Get recent earnings
+        recent_eps = info.get("trailingEps")
+        forward_eps = info.get("forwardEps")
+        
+        # Get revenue data
+        revenue = info.get("totalRevenue")
+        revenue_growth = info.get("revenueGrowth")
+        
+        # Get price targets
+        target_mean = info.get("targetMeanPrice")
+        target_high = info.get("targetHighPrice")
+        target_low = info.get("targetLowPrice")
+        
+        # Get recommendation
+        recommendation = info.get("recommendationKey", "N/A")
+        reco_dict = {"buy": "🟢 Buy", "overweight": "🟢 Overweight", "hold": "🟡 Hold", 
+                     "underweight": "🟠 Underweight", "sell": "🔴 Sell", "neutral": "🟡 Neutral"}
+        reco_label = reco_dict.get(recommendation, recommendation.upper() if recommendation else "N/A")
+        
+        return {
+            "has_data": bool(earnings_date or recent_eps),
+            "last_earnings_date": earnings_date or "N/A",
+            "eps_ttm": f"{recent_eps:.2f}" if recent_eps else "N/A",
+            "forward_eps": f"{forward_eps:.2f}" if forward_eps else "N/A",
+            "revenue": f"${revenue:,.0f}" if revenue else "N/A",
+            "revenue_growth": f"{revenue_growth*100:.1f}%" if revenue_growth else "N/A",
+            "target_price": f"${target_mean:.2f}" if target_mean else "N/A",
+            "target_high": f"${target_high:.2f}" if target_high else "N/A",
+            "target_low": f"${target_low:.2f}" if target_low else "N/A",
+            "recommendation": reco_label,
+            "upgrade_downgrade": _get_recent_analyst_action(ticker),
+        }
+    except:
+        return {
+            "has_data": False,
+            "last_earnings_date": "Unavailable",
+            "eps_ttm": "N/A",
+            "forward_eps": "N/A",
+            "revenue": "N/A",
+            "revenue_growth": "N/A",
+            "target_price": "N/A",
+            "target_high": "N/A",
+            "target_low": "N/A",
+            "recommendation": "N/A",
+            "upgrade_downgrade": "N/A",
+        }
+
+def _get_recent_analyst_action(ticker):
+    """Get recent analyst upgrades/downgrades"""
+    try:
+        stock = yf.Ticker(ticker)
+        news = stock.news if hasattr(stock, 'news') else []
+        
+        for item in news[:5]:
+            title = item.get("title", "")
+            if any(word in title.lower() for word in ["upgrade", "downgrade", "initiate", "target", "buy", "sell", "rating"]):
+                return title[:100]
+        return "No recent analyst actions"
+    except:
+        return "No recent analyst actions"
+
+def get_stock_story(ticker, data=None):
+    """Get a complete 1-paragraph story about what this stock does + latest news"""
+    desc = STOCK_DESCRIPTIONS.get(ticker, "Stock ticker")
+    
+    # Get real-time context
+    price_info = ""
+    if data and ticker in data:
+        stock = data[ticker]
+        price = stock.get("price", 0)
+        change = stock.get("change_pct", 0)
+        vol = stock.get("volume", 0)
+        direction = "up 📈" if change >= 0 else "down 📉"
+        vol_str = f"{vol/1_000_000:.1f}M" if vol >= 1_000_000 else str(vol)
+        price_info = f"Currently trading at **${price:.2f}** ({direction} {abs(change):.1f}% today). Volume: {vol_str}."
+    
+    # Get earnings context
+    earnings = get_earnings_info(ticker)
+    earnings_info = ""
+    if earnings["has_data"]:
+        if earnings["last_earnings_date"] != "N/A":
+            earnings_info += f"Latest earnings reported: **{earnings['last_earnings_date']}**. "
+        if earnings["eps_ttm"] != "N/A":
+            earnings_info += f"TTM EPS: **{earnings['eps_ttm']}**. "
+        if earnings["revenue_growth"] != "N/A":
+            earnings_info += f"Revenue growth: **{earnings['revenue_growth']}**. "
+        if earnings["recommendation"] != "N/A":
+            earnings_info += f"Analyst consensus: **{earnings['recommendation']}**"
+    
+    # Get analyst actions
+    analyst_action = earnings.get("upgrade_downgrade", "")
+    analyst_info = ""
+    if analyst_action and "No recent" not in analyst_action and "N/A" not in analyst_action:
+        analyst_info = f"Recent analyst action: {analyst_action}"
+    
+    story = f"**{ticker}** - {desc}. {price_info} {earnings_info}"
+    if analyst_info:
+        story += f" {analyst_info}"
+    
+    return story
 
 def format_volume(vol):
     if vol >= 1_000_000_000:
