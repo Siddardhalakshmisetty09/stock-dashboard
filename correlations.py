@@ -203,14 +203,15 @@ def get_stock_summary(ticker, data=None):
     }
 
 def search_stocks(query, data=None):
-    """Search for stocks by ticker or name"""
+    """Search for stocks by ticker or name - searches ANY stock, not just tracked ones"""
     query = query.upper().strip()
     if not query or len(query) < 1:
         return []
     
     results = []
+    searched_tickers = set()
     
-    # Search by ticker
+    # Source 1: Known stocks in our database
     for ticker, name in STOCK_DESCRIPTIONS.items():
         if query in ticker.upper() or query in name.upper():
             summary = get_stock_summary(ticker, data)
@@ -222,6 +223,59 @@ def search_stocks(query, data=None):
                 "change_pct": summary["change_pct"],
                 "volume_str": summary["volume_str"],
             })
+            searched_tickers.add(ticker)
+    
+    # Source 2: Search yfinance directly (any ticker exists)
+    if data and len(results) < 5:
+        for ticker in sorted(data.keys()):
+            if ticker not in searched_tickers:
+                name = data[ticker].get("name", ticker)
+                if query in ticker.upper() or query in name.upper():
+                    results.append({
+                        "ticker": ticker,
+                        "name": name,
+                        "description": f"Price: ${data[ticker].get('price', 0):.2f} | Change: {data[ticker].get('change_pct', 0):+.2f}%",
+                        "price": data[ticker].get("price", 0),
+                        "change_pct": data[ticker].get("change_pct", 0),
+                        "volume_str": "N/A",
+                    })
+                    searched_tickers.add(ticker)
+    
+    # Source 3: If no results found, try to fetch the ticker directly
+    if not results:
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(query)
+            info = stock.info
+            if info:
+                ticker = query
+                name = info.get("longName") or info.get("shortName") or query
+                price = info.get("currentPrice") or info.get("regularMarketPrice") or 0
+                prev_close = info.get("previousClose", price)
+                change = price - prev_close if prev_close else 0
+                change_pct = (change / prev_close) * 100 if prev_close else 0
+                
+                results.append({
+                    "ticker": ticker,
+                    "name": name,
+                    "description": f"Found via market data - Price: ${price:.2f}" if price else "Found via market data",
+                    "price": price,
+                    "change_pct": round(change_pct, 2),
+                    "volume_str": format_volume(info.get("volume", 0)),
+                })
+        except:
+            pass
+    
+    # Source 4: Absolute last resort - return ticker with note
+    if not results and len(query) >= 1:
+        results.append({
+            "ticker": query,
+            "name": f"Stock: {query}",
+            "description": "No market data available for this ticker. Check if it's correctly spelled.",
+            "price": 0,
+            "change_pct": 0,
+            "volume_str": "N/A",
+        })
     
     # Sort by relevance (exact match first)
     results.sort(key=lambda x: (
@@ -381,3 +435,12 @@ def _get_sector_drivers(sector_name, avg_change):
         ]
     
     return drivers[:3]  # Max 3 drivers
+
+def format_volume(vol):
+    if vol >= 1_000_000_000:
+        return f"{vol/1_000_000_000:.1f}B"
+    elif vol >= 1_000_000:
+        return f"{vol/1_000_000:.1f}M"
+    elif vol >= 1_000:
+        return f"{vol/1_000:.1f}K"
+    return str(vol)

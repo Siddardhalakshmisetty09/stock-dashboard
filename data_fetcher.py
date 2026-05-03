@@ -29,12 +29,12 @@ SECTOR_ANALYSIS = {
         "description": "Pure-play quantum computing companies. From trapped-ion qubits to quantum annealing, these are the frontier of next-gen computing.",
         "why_hot": "IBM, Google, and Microsoft all claimed quantum supremacy milestones in 2025. Government funding (US CHIPS Act, EU, Japan) poured $5B+ into quantum R&D. Commercial quantum advantage is now forecast by 2027 - the race is ON.",
     },
-    "📈 FANGMAN+": {
-        "stocks": ["META", "AMZN", "NFLX", "GOOGL", "MSFT", "AAPL", "NVDA", "TSLA"],
+    "📈 Core Tech": {
+        "stocks": ["META", "AMZN", "NFLX", "GOOGL", "MSFT", "AAPL", "NVDA", "TSLA", "ORCL", "IBM", "CRM", "ADBE", "NOW", "SAP"],
         "emoji": "📈",
         "color": "#ec4899",
-        "description": "The mega-cap tech titans driving global markets. These 8 stocks represent ~35% of the S&P 500 and dictate market direction.",
-        "why_hot": "FANGMAN+ earnings grew 25% YoY driven by AI monetization. MSFT's Azure AI grew 50%, AMZN's AWS AI grew 40%, GOOGL's Cloud AI grew 35%. The AI tailwind is directly flowing to their bottom lines.",
+        "description": "Mega-cap tech titans + enterprise software leaders. These stocks drive global market direction.",
+        "why_hot": "Enterprise software and cloud spending is rebounding. AI monetization flowing to bottom lines. ORCL cloud revenue surged, CRM AI agents driving adoption, ADBE integrating AI across products.",
     },
     "🖥️ Semiconductors": {
         "stocks": ["NVDA", "AMD", "INTC", "TSM", "ASML", "AVGO", "MRVL", "MU", "QCOM", "AMAT", "LRCX", "KLAC", "NXPI", "STM", "ON"],
@@ -60,7 +60,13 @@ SECTOR_ANALYSIS = {
 }
 
 # Flatten all stocks & their sectors for internal mapping
-ALL_STOCKS = {}
+ALL_STOCKS = {
+    "ORCL": "Oracle Corp", "IBM": "IBM Corp", "CRM": "Salesforce Inc",
+    "ADBE": "Adobe Inc", "NOW": "ServiceNow Inc", "SAP": "SAP SE",
+    "UBER": "Uber Technologies", "SHOP": "Shopify Inc", "SNOW": "Snowflake Inc",
+    "DDOG": "Datadog Inc", "MDB": "MongoDB Inc", "NET": "Cloudflare Inc",
+    "COIN": "Coinbase Global", "MSTR": "MicroStrategy Inc", "HOOD": "Robinhood Markets",
+}
 STOCK_SECTOR_MAP = {}
 SECTOR_DISPLAY = {}
 

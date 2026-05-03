@@ -362,10 +362,12 @@ with col_search:
 
 with col_status:
     status_icon = "🟢" if mkt_status["status"] == "open" else "🔴"
+    # Show selected market session in badge
+    session_display = market_session if 'market_session' in dir() else mkt_status['session']
     st.markdown(
         f"<div style='text-align:right;'>"
         f"<div class='mkt-badge' style='background:{'rgba(34,197,94,0.1)' if mkt_status['status']=='open' else 'rgba(239,68,68,0.1)'};color:{mkt_status['color']};border:1px solid {mkt_status['color']}40;'>"
-        f"{status_icon} {mkt_status['label']} • {mkt_status['session']}"
+        f"{status_icon} {mkt_status['label']} • {session_display}"
         f"</div>"
         f"</div>",
         unsafe_allow_html=True
@@ -395,6 +397,16 @@ with st.sidebar:
     show_news = st.checkbox("News & Sentiment", value=True)
     show_events = st.checkbox("📅 Economic Events", value=True)
     
+    st.markdown("### 🕐 Market Session")
+    market_session = st.selectbox(
+        "Show data for:",
+        ["Regular Hours", "Pre-Market", "After-Hours"],
+        label_visibility="collapsed"
+    )
+    # Update market status to include session
+    if market_session != "Regular Hours":
+        mkt_status["session"] = market_session
+    
     st.markdown("---")
     st.markdown("### 💡 About")
     st.markdown("""
@@ -420,11 +432,40 @@ with st.sidebar:
 # ============================================================
 # FETCH DATA
 # ============================================================
-with st.spinner("🪐 Loading market data..."):
-    data = get_stock_data()
-    st.session_state.search_data = data
-    
-    all_news = []
+# Fast loading with caching
+if "cached_data" in st.session_state and "cached_time" in st.session_state:
+    cache_age = (datetime.now() - st.session_state.cached_time).seconds
+    if cache_age < 60:  # 1 min cache
+        data = st.session_state.cached_data
+    else:
+        cache_age = 999  # Force refresh
+else:
+    cache_age = 999
+
+if cache_age > 60:
+    with st.spinner("🪐 Loading market data..."):
+        data = get_stock_data()
+        st.session_state.cached_data = data
+        st.session_state.cached_time = datetime.now()
+else:
+    data = st.session_state.cached_data
+
+st.session_state.search_data = data
+
+# Only fetch news if needed
+all_news = []
+stock_news_cache = {}
+if show_news:
+    # Check if news is cached
+    if "cached_news" in st.session_state:
+        all_news, stock_news_cache = st.session_state.cached_news
+    else:
+        tickers = list(data.keys())[:15]  # Limit for speed
+        for idx, ticker in enumerate(tickers):
+            news = get_stock_news(ticker, data[ticker]["name"])
+            stock_news_cache[ticker] = news
+            all_news.extend(news)
+        st.session_state.cached_news = (all_news, stock_news_cache)
     stock_news_cache = {}
     if show_news:
         progress_bar = st.progress(0)

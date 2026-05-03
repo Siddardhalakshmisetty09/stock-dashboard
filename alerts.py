@@ -152,33 +152,39 @@ def get_tradingview_volume_analysis(ticker):
 # ============================================================
 
 def is_market_open():
-    """Check if US stock market is currently in session"""
+    """Check if US stock market is currently in session"
+    Returns: (is_active, session_type)
+    Session types: "Regular Hours", "Pre-Market", "After-Hours", "Closed"
+    """
     now = datetime.now()
     
     if now.weekday() >= 5:
         return False, "Weekend"
     
+    # US Eastern Time approximate (UTC-4 for EDT)
     utc_hour = now.hour
     utc_minute = now.minute
     
-    market_open_hour = 13  # UTC approx (9:30 AM ET)
-    market_close_hour = 20  # UTC approx (4:00 PM ET)
+    # Regular market hours: 9:30 AM - 4:00 PM ET = 13:30 - 20:00 UTC (EDT)
+    # Pre-market: 4:00 AM - 9:30 AM ET = 8:00 - 13:30 UTC
+    # After-hours: 4:00 PM - 8:00 PM ET = 20:00 - 00:00 UTC
     
-    is_open = False
-    session = "Closed"
+    pre_market_start = 8       # 4:00 AM ET
+    market_open = 13           # 9:30 AM ET approx
+    market_close = 20          # 4:00 PM ET approx
+    after_hours_end = 24       # 8:00 PM ET approx
     
     if now.weekday() < 5:
-        if utc_hour >= market_open_hour and utc_hour < market_close_hour:
-            is_open = True
-            session = "Regular Hours"
-        elif utc_hour >= 8 and utc_hour < market_open_hour:
-            session = "Pre-Market"
-        elif utc_hour >= market_close_hour and utc_hour < 24:
-            session = "After-Hours"
-        elif utc_hour >= 0 and utc_hour < 8:
-            session = "Closed (Night)"
+        if utc_hour >= market_open and utc_hour < market_close:
+            return True, "Regular Hours"
+        elif utc_hour >= pre_market_start and utc_hour < market_open:
+            return True, "Pre-Market"  # Treat as active for alerts
+        elif utc_hour >= market_close and utc_hour < after_hours_end:
+            return True, "After-Hours"  # Treat as active for alerts
+        else:
+            return False, "Closed (Night)"
     
-    return is_open, session
+    return False, "Closed"
 
 def get_alerts(tickers, threshold_volume=2.0, threshold_price=2.0):
     """
