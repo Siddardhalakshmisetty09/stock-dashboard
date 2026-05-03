@@ -257,6 +257,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ---- Market Status (fetched early) ----
+try:
+    mkt_status = get_market_status()
+except:
+    mkt_status = {"status": "closed", "label": "🔴 Market Closed", "session": "Unknown", "color": "#ef4444"}
+
 # ---- App Header ----
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -265,7 +271,7 @@ with col1:
 with col2:
     st.markdown(
         f"<div style='text-align:right;padding-top:15px;'>"
-        f"<span class='refresh-badge'>{"🟢" if mkt_status['status']=='open' else '🔴'} {mkt_status['label']}</span>"
+        f"<span class='refresh-badge'>{'🟢' if mkt_status['status']=='open' else '🔴'} {mkt_status['label']}</span>"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -338,7 +344,7 @@ with st.spinner("📡 Fetching live market data & news..."):
     
     # Fetch alerts
     alerts_data = get_alerts(list(data.keys()))
-    mkt_status = get_market_status()
+    # mkt_status already defined above
     total_alerts = sum(len(a) for a in alerts_data.values())
     time.sleep(0.3)
 
