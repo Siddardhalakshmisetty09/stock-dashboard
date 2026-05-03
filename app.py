@@ -12,7 +12,8 @@ from data_fetcher import (
 from news_sentiment import (
     get_stock_news,
     get_market_sentiment_summary,
-    analyze_sentiment
+    analyze_sentiment,
+    get_mention_counts
 )
 
 # Page config
