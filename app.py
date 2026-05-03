@@ -4,10 +4,16 @@ from datetime import datetime
 import time
 from data_fetcher import (
     get_stock_data, 
-    AI_STOCKS, 
-    SECTOR_MAP, 
+    ALL_STOCKS, 
+    SECTOR_ANALYSIS, 
+    STOCK_SECTOR_MAP,
+    SECTOR_DISPLAY,
     format_market_cap, 
-    format_volume
+    format_volume,
+    analyze_sectors,
+    get_sectors_list,
+    get_stocks_for_sector,
+    get_sector_emoji
 )
 from news_sentiment import (
     get_stock_news,
@@ -254,6 +260,112 @@ st.markdown("""
         border: 1px solid #2a3040 !important;
         border-top: none !important;
     }
+
+    /* Hot Sector Hero */
+    .hot-sector-hero {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        border-radius: 20px;
+        padding: 30px;
+        margin: 20px 0;
+        border: 2px solid;
+        position: relative;
+        overflow: hidden;
+    }
+    .hot-sector-hero::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 200px;
+        height: 200px;
+        background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .hot-label {
+        display: inline-block;
+        background: linear-gradient(135deg, #ef4444, #f97316);
+        color: white;
+        padding: 4px 16px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: 600;
+        letter-spacing: 1px;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .hot-sector-name {
+        font-size: 2.2em;
+        font-weight: 800;
+        margin: 10px 0 5px 0;
+    }
+    .hot-sector-why {
+        color: #94a3b8;
+        font-size: 0.9em;
+        line-height: 1.5;
+        margin-top: 10px;
+        padding: 15px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 10px;
+        border-left: 3px solid;
+    }
+    /* Sector card in carousel */
+    .sector-card {
+        background: #141a26;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        border: 1px solid #1f2937;
+        transition: transform 0.2s, border-color 0.2s;
+        cursor: pointer;
+    }
+    .sector-card:hover {
+        transform: translateY(-3px);
+        border-color: #3b82f6;
+    }
+    .sector-card.hot {
+        border: 2px solid #ef4444;
+        animation: glow 2s infinite;
+    }
+    @keyframes glow {
+        0% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
+        50% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+        100% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
+    }
+    .sector-emoji {
+        font-size: 2em;
+    }
+    .sector-name {
+        color: #e2e8f0;
+        font-size: 0.8em;
+        font-weight: 600;
+        margin-top: 5px;
+    }
+    .sector-change {
+        font-size: 0.9em;
+        font-weight: 600;
+        margin-top: 3px;
+    }
+    /* Stats in hot section */
+    .hot-stat {
+        background: rgba(0,0,0,0.2);
+        border-radius: 10px;
+        padding: 12px;
+        text-align: center;
+    }
+    .hot-stat-value {
+        font-size: 1.4em;
+        font-weight: 700;
+    }
+    .hot-stat-label {
+        color: #64748b;
+        font-size: 0.7em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -267,7 +379,7 @@ except:
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown("<h1 style='margin-bottom:0;'>🤖 AI Backbone Stocks</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color:#94a3b8;margin-top:0;'>The companies powering the Artificial Intelligence revolution</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#94a3b8;margin-top:0;'>Multi-sector tracker - AI, Gold, Quantum, FANGMAN, Semis, Copper, Financials</p>", unsafe_allow_html=True)
 with col2:
     st.markdown(
         f"<div style='text-align:right;padding-top:15px;'>"
@@ -286,8 +398,8 @@ with st.sidebar:
     
     # Sector filter
     st.markdown("### 🔍 Filter by Sector")
-    sectors = ["All Sectors"] + list(SECTOR_MAP.keys())
-    selected_sector = st.selectbox("Select sector", sectors, label_visibility="collapsed")
+    sectors_list = ["All Sectors"] + get_sectors_list()
+    selected_sector = st.selectbox("Select sector", sectors_list, label_visibility="collapsed")
     
     # Performance filter
     st.markdown("### 📊 Performance Filter")
@@ -309,11 +421,13 @@ with st.sidebar:
         the critical infrastructure powering the AI revolution.
         
         **Sectors tracked:**
-        - 🖥️ Chip Design
-        - 🏭 Semiconductor Manufacturing
-        - 🔧 Equipment & Memory
-        - 🌐 AI Infrastructure
-        - 📊 AI Software & Platforms
+        - 🤖 AI/Backbone (15 stocks)
+        - 🥇 Gold & Precious Metals (10)
+        - 🔬 Quantum Computing (10)
+        - 📈 FANGMAN+ (8 mega-caps)
+        - 🖥️ Semiconductors (15 full chain)
+        - 🟢 Copper & Miners (10)
+        - 🏦 Financials / XLF (15)
         
         **Features:**
         - 📈 Real-time stock data
@@ -353,7 +467,7 @@ filtered_tickers = list(data.keys())
 
 # Sector filter
 if selected_sector != "All Sectors":
-    sector_stocks = SECTOR_MAP.get(selected_sector, [])
+    sector_stocks = get_stocks_for_sector(selected_sector)
     filtered_tickers = [t for t in filtered_tickers if t in sector_stocks]
 
 # Performance filter
@@ -435,6 +549,69 @@ if show_news and all_news:
         f"</div>",
         unsafe_allow_html=True
     )
+
+# ---- HOT SECTOR SPOTLIGHT ----
+if 'data' in dir() and data:
+    hot_sector, sector_perf = analyze_sectors(data)
+    
+    if hot_sector and hot_sector in sector_perf:
+        hot = sector_perf[hot_sector]
+        
+        # Hero section
+        st.markdown("<div class='section-header'>🔥 Hot Sector Spotlight</div>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.markdown(
+                f"<div class='hot-sector-hero' style='border-color:{hot['color']}20;'>"
+                f"<span class='hot-label'>🔥 HOT SECTOR</span>"
+                f"<div class='hot-sector-name' style='color:{hot['color']};'>{hot['emoji']} {hot_sector}</div>"
+                f"<div style='color:#e2e8f0;font-size:0.95em;margin:8px 0;'>{hot['description']}</div>"
+                f"<div class='hot-sector-why' style='border-color:{hot['color']};'>"
+                f"<strong>🔥 Why it's hot:</strong> {hot['why_hot']}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        
+        with col2:
+            st.markdown(
+                f"<div style='background:#141a26;border-radius:16px;padding:20px;border:1px solid #1f2937;height:100%;display:flex;flex-direction:column;justify-content:center;'>"
+                f"<div class='hot-stat'>"
+                f"<div class='hot-stat-value' style='color:{'#22c55e' if hot['avg_change'] >= 0 else '#ef4444'};'>{hot['avg_change']:+.2f}%</div>"
+                f"<div class='hot-stat-label'>Sector Avg Change</div>"
+                f"</div>"
+                f"<div class='hot-stat' style='margin-top:10px;'>"
+                f"<div class='hot-stat-value' style='color:#22c55e;'>{hot['gainers']}/{hot['total']}</div>"
+                f"<div class='hot-stat-label'>Stocks Gaining</div>"
+                f"</div>"
+                f"<div class='hot-stat' style='margin-top:10px;'>"
+                f"<div class='hot-stat-value'>{format_market_cap(hot['total_mcap'])}</div>"
+                f"<div class='hot-stat-label'>Total Market Cap</div>"
+                f"</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        
+        # Sector comparison cards
+        st.markdown("<div style='margin:15px 0;color:#94a3b8;font-size:0.9em;'>📊 All Sectors Performance</div>", unsafe_allow_html=True)
+        
+        cols = st.columns(len(sector_perf))
+        for idx, (sector_name, perf) in enumerate(sorted(sector_perf.items(), key=lambda x: x[1]['score'], reverse=True)):
+            with cols[idx]:
+                is_hot = sector_name == hot_sector
+                hot_class = "hot" if is_hot else ""
+                change_color = "#22c55e" if perf['avg_change'] >= 0 else "#ef4444"
+                change_arrow = "▲" if perf['avg_change'] >= 0 else "▼"
+                
+                st.markdown(
+                    f"<div class='sector-card {hot_class}'>"
+                    f"<div class='sector-emoji'>{perf['emoji']}</div>"
+                    f"<div class='sector-name'>{sector_name.replace(' &', '').split()[0] if len(sector_name) > 12 else sector_name}</div>"
+                    f"<div class='sector-change' style='color:{change_color};'>{change_arrow} {perf['avg_change']:+.2f}%</div>"
+                    f"<div style='color:#64748b;font-size:0.65em;margin-top:2px;'>{perf['gainers']}/{perf['total']} up</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
 # ---- MARKET OVERVIEW ----
 st.markdown("<div class='section-header'>📈 Market Overview</div>", unsafe_allow_html=True)
@@ -587,7 +764,8 @@ for i in range(0, len(filtered_tickers), 3):
 st.markdown("<div class='section-header'>📊 Sector Performance</div>", unsafe_allow_html=True)
 
 sector_data = []
-for sector, tickers in SECTOR_MAP.items():
+for sector_name in get_sectors_list():
+    tickers = get_stocks_for_sector(sector_name)
     sector_stocks = [data[t] for t in tickers if t in data]
     if sector_stocks:
         avg_sector_change = sum(s["change_pct"] for s in sector_stocks) / len(sector_stocks)
